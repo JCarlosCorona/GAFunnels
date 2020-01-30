@@ -5,7 +5,8 @@ pacman::p_load("googleAnalyticsR",
                "lubridate",
                "ggplot2",
                "gridExtra",
-               "tidyverse")
+               "tidyverse",
+               "plotly")
 
 # Configuracion de Google Analytics----
 ga_auth()
@@ -38,7 +39,15 @@ Dims <- c("pagePath")
 #Metricas
 Mets <- c("users")
 # Segmentos
-seg <- segment_ga4(PCAT.Muebles, segment_id = "gaid::J_CellbqT8KGfVJDSZAfLg")
+segs <- ga_segment_list()
+segmnents <- segs[,c("name","id")]
+segmnents <- segmnents %>%
+  select(name, id) %>% 
+  filter(grepl("PCAT",name,ignore.case = TRUE))
+segmnents
+SegId <- segmnents$id[2]
+
+seg <- segment_ga4("PCAT.Muebles", segment_id = SegId)
 # Filtros
 DFilterS1 <- dim_filter(
   dimension = "pagePath",
@@ -70,7 +79,7 @@ df <-  google_analytics(
   viewId = ViewId,
   date_range = c(StartDate,
                  EndDate),
-  # segments = seg,
+  segments = seg,
   metrics = Mets,
   met_filters = MetFilters,
   dimensions = Dims,
@@ -79,5 +88,29 @@ df <-  google_analytics(
   max = 100000
 )
 head(df)
+colnames(df)
 
-            
+dat <- df %>% 
+  select(pagePath,users) %>% 
+  mutate(steps = case_when(
+  grepl("-(pm|pr|im)-", pagePath, ignore.case = TRUE) ~ "1.Detalle de Producto",
+  grepl("\\/AjaxOrderItemDisplayView?.*", pagePath, ignore.case = TRUE) ~ "2.Carrito",
+  grepl("\\/OrderShippingBillingView?.*", pagePath, ignore.case = TRUE) ~ "3.Datos de Entrega",
+  grepl("\\/SingleShipmentOrderSummaryView?.*", pagePath, ignore.case = TRUE) ~ "4.Revisar Orden",
+  grepl("\\/OrderShippingBillingConfirmationView?.*", pagePath, ignore.case = TRUE) ~ "5.Compra")) %>% 
+  select(-pagePath) %>% 
+  group_by(steps) %>% 
+  summarise(numbers = sum(users)) %>% 
+  mutate(rate = (numbers/sum(numbers)))
+
+#Graficar----
+p <- plot_ly() %>%
+  add_trace(type = "funnel",
+            name = "Test",
+            y = dat$steps,
+            x = dat$numbers,
+            textposition = "auto",
+            textinfo = "value+percent initial",
+            opacity = 0.45) %>%
+  layout(yaxis = list(categoryarray = dat$steps))
+p
